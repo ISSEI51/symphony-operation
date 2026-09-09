@@ -139,7 +139,7 @@ cd <対象リポジトリ>
 | `--repo <owner/repo>` | cwdのorigin | 対象リポジトリ |
 | `--instance <name>` | リポジトリ名 | `~/symphony/` 配下のディレクトリ名 |
 | `--model <alias>` | `opus` | Claude Codeのモデル |
-| `--concurrency <n>` | 雛形の値 | 同時実行Issue数 |
+| `--concurrency <n>` | `10` | 同時実行Issue数 |
 | `--preview <yes\|no>` | 自動判定 | `bin/preview.sh` を設置するか |
 | `--force` | — | 既存インスタンスを上書き |
 
