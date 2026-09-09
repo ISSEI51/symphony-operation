@@ -73,7 +73,51 @@ tail -1 ~/symphony/<instance>/WORKFLOW.md
 
 Expect the chosen model, 10 AWS lines, and the auto-closing-keywords rule.
 
-## Step 5: Start
+## Step 5: Check host ports in development compose files
+
+Skip when the repository has no compose file.
+
+Hardcoded host ports make the second parallel workspace fail to start, and they
+break `preview.sh`. **This is the only step that touches the target repository,
+so report first and write only after the user agrees.**
+
+```bash
+python3 <skill-dir>/scripts/compose_ports.py
+```
+
+It prints a unified diff and exits 1 when changes are needed. The rewrite turns
+`- "3000:3000"` into `- "${HOST_WEB_PORT:-3000}:3000"`, so **with the variable
+unset the resolved configuration is byte-identical to before**. Prove that when
+the user is cautious about an existing setup:
+
+```bash
+docker compose config > /tmp/compose-before.txt
+python3 <skill-dir>/scripts/compose_ports.py --write
+docker compose config > /tmp/compose-after.txt
+diff /tmp/compose-before.txt /tmp/compose-after.txt   # must print nothing
+```
+
+Otherwise apply with:
+
+```bash
+python3 <skill-dir>/scripts/compose_ports.py --write
+```
+
+| | |
+| --- | --- |
+| considered | `docker-compose.yml/.yaml`, `docker-compose.dev.*`, `docker-compose.override.*`, `compose.yml/.yaml`, `compose.dev.*`, `compose.override.*` |
+| refused | any name containing `prod`, `production`, `stg`, `staging`, `release`, `live` — even when passed via `--file` |
+| left alone | entries already containing `$`, container-only entries such as `"6379"`, entries it cannot parse (reported as `WARN`) |
+| preserved | container port, bind IP, `/tcp` `/udp` suffix, port ranges, comments, indentation |
+| variable name | `HOST_<SERVICE>_PORT`, with `_2`, `_3` when a service exposes several ports |
+
+Never pass a production compose file with `--file`. The script refuses those
+names, but do not attempt to work around it.
+
+If the script warns that `.env` is missing from `.gitignore`, tell the user; do
+not edit `.gitignore` yourself unless asked.
+
+## Step 6: Start
 
 Ask the user before starting — the factory runs Claude Code with
 `bypassPermissions` against a live repository.
@@ -93,7 +137,7 @@ pnpm tsx bin/symphony.ts factory attach \
   --workflow ~/symphony/<instance>/WORKFLOW.md
 ```
 
-## Step 6: Tell the user how to hand over work
+## Step 7: Tell the user how to hand over work
 
 ```bash
 gh issue create --repo <owner>/<repo> \
@@ -130,7 +174,10 @@ current turn.
 
 ## Rules
 
-- Do not create, modify, or delete files inside the target repository
+- Do not create, modify, or delete files inside the target repository. The one
+  exception is Step 5, which rewrites host ports in development compose files —
+  show the diff and get the user's agreement before writing, and never touch a
+  production, staging, or release compose file
 - Do not run `factory start` without asking
 - Do not create GitHub issues, comments, or merges unless the user asks
 - If an instance already exists for this repository, report its path and current

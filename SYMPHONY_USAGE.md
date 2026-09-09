@@ -584,6 +584,39 @@ services:
 
 PostgreSQL / Redis などのデータ層はworkspaceごとに複製せず共有し、schema名やkey prefixで分離するほうがメモリ効率が良い。完全分離が必要なのはマイグレーション検証と破壊的テストのときだけ。
 
+#### 既存repoの一括変換
+
+`compose_ports.py` が既存の compose ファイルを走査し、固定ポートを環境変数化する。既定は確認のみで、`--write` を付けたときだけ書き換える。
+
+```bash
+cd <対象リポジトリ>
+
+# 変更内容をunified diffで確認する
+python3 ~/dev/symphony-operation/skills/symphony-setup/scripts/compose_ports.py
+
+# 適用する
+python3 ~/dev/symphony-operation/skills/symphony-setup/scripts/compose_ports.py --write
+```
+
+**既定値に元のポートを埋めるため、環境変数を設定しなければ挙動は一切変わらない。** 不安な場合は前後で `docker compose config` を比較する。差分が出なければ既存の運用は変化していない。
+
+```bash
+docker compose config > /tmp/before.txt
+python3 .../compose_ports.py --write
+docker compose config > /tmp/after.txt
+diff /tmp/before.txt /tmp/after.txt   # 何も出なければOK
+```
+
+| | |
+| --- | --- |
+| 対象 | `docker-compose.yml/.yaml`、`docker-compose.dev.*`、`docker-compose.override.*`、`compose.yml/.yaml`、`compose.dev.*`、`compose.override.*` |
+| 拒否 | `prod` / `production` / `stg` / `staging` / `release` / `live` を含む名前。`--file` で明示指定しても拒否する |
+| 変更しない | すでに `$` を含むもの、`"6379"` のようなコンテナ側のみの指定、解析できないもの（`WARN` で報告） |
+| 保持 | コンテナ側ポート、バインドIP、`/tcp` `/udp`、ポート範囲、コメント、字下げ |
+| 変数名 | `HOST_<サービス名>_PORT`。1サービスが複数ポートを持つ場合は `_2` `_3` を付ける |
+
+本番用の compose ファイルは対象外。ファイル名の許可リスト方式のため、`docker-compose.prod.yml` のようなファイルは自動検出でも `--file` 指定でも処理されない。
+
 ### 13.4 `preview.sh` でIssueごとに起動する
 
 **ポートをIssue番号から決める**ため、`.env` の事前生成もポートの採番も不要。全文は14.4。

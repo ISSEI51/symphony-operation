@@ -41,7 +41,7 @@ status:
     echo "instances:"
     ls -1 "${SYMPHONY_HOME:-$HOME/symphony}" 2>/dev/null | sed 's/^/  /' || echo "  (none)"
 
-# シェルスクリプトを検査する
+# シェル/Python スクリプトを検査する
 lint:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -51,6 +51,9 @@ lint:
       echo "shellcheck not installed; falling back to bash -n"
       for f in skills/symphony-setup/scripts/*.sh; do bash -n "$f"; done
     fi
+    for f in skills/symphony-setup/scripts/*.py; do
+      python3 -m py_compile "$f" && echo "OK $f"
+    done
 
 # lint とドキュメント整合性をまとめて確認する
 ci: lint check-doc
