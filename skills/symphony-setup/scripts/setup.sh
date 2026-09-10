@@ -39,6 +39,34 @@ die() {
   exit 1
 }
 
+# Compose derives a project name from the directory: lowercased, with every
+# character outside [a-z0-9_-] removed.
+compose_project_name() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-'
+}
+
+# Record the two facts preview.sh cannot discover on its own: where the main
+# checkout is, and what its compose project is called. ":=" leaves an exported
+# variable untouched, so the operator can still override any of it.
+write_preview_conf() {
+  local conf="$1" checkout="$2" project="$3" env_source=""
+  [ -n "$checkout" ] && env_source="${checkout}/.env"
+  {
+    printf '%s\n' "# Written by setup.sh. Read by preview.sh; environment variables win."
+    printf '%s\n' "#"
+    printf '%s\n' "# Assign with [ -n ... ] || VAR='...' rather than \${VAR:=...}: a \"}\" in the"
+    printf '%s\n' "# value would end that expansion early, and the port placeholders below"
+    printf '%s\n' "# contain one. Single quotes keep the placeholders literal."
+    printf '%s\n' "[ -n \"\${SYMPHONY_ENV_SOURCE:-}\" ] || SYMPHONY_ENV_SOURCE='${env_source}'"
+    printf '%s\n' "[ -n \"\${SYMPHONY_SOURCE_PROJECT:-}\" ] || SYMPHONY_SOURCE_PROJECT='${project}'"
+    printf '%s\n' "#"
+    printf '%s\n' "# Values that must follow the workspace's ports rather than whatever the"
+    printf '%s\n' "# workspace .env says. Placeholders: {web} {api} {db} {opensearch} {redis}."
+    printf '%s\n' "# A browser-facing API base URL is the usual case; uncomment and adjust:"
+    printf '%s\n' "# [ -n \"\${SYMPHONY_ENV_OVERRIDE:-}\" ] || SYMPHONY_ENV_OVERRIDE='NEXT_PUBLIC_API_BASE_URL=http://localhost:{api}/api/v1'"
+  } >"$conf"
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) repo="${2:-}"; shift 2 ;;
@@ -134,6 +162,17 @@ if [ "$with_preview" = "yes" ]; then
   mkdir -p "$instance_root/bin"
   cp "$SCRIPT_DIR/preview.sh" "$instance_root/bin/preview.sh"
   chmod +x "$instance_root/bin/preview.sh"
+  # Only a run inside the target checkout knows where it is; --repo does not.
+  if [ -d .git ] || git rev-parse --show-toplevel >/dev/null 2>&1; then
+    checkout_root="$(git rev-parse --show-toplevel)"
+    write_preview_conf "$instance_root/bin/preview.conf" \
+      "$checkout_root" \
+      "$(compose_project_name "$(basename "$checkout_root")")"
+  else
+    write_preview_conf "$instance_root/bin/preview.conf" "" ""
+    echo "note: preview.conf has no checkout path; run setup.sh from the" >&2
+    echo "      repository to seed .env and copy the database." >&2
+  fi
 fi
 
 # ------------------------------------------------------------------ summary --

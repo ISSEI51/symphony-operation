@@ -659,6 +659,72 @@ web       : http://localhost:3003
 
 複数のIssueを同時に見るときは、ターミナルを分けてそれぞれ起動する。ポートが被らないので何個でも並べられる。
 
+#### `.env` とデータベース
+
+workspaceは新しいcloneなので、`.gitignore` に入っている `.env` が無く、DBのボリュームも空になる。`preview.sh` は初回起動時に本体チェックアウトから両方を持ち込む。
+
+| 対象 | 動作 |
+| --- | --- |
+| `.env` | 本体からコピー。**ホストポートに依存する行は除去する**（後述） |
+| PostgreSQL / OpenSearch のボリューム | 本体のボリュームをファイルコピーで複製 |
+
+ボリュームのコピーは、コピー元のプロジェクトが**停止しているとき**だけ実行する。稼働中のデータディレクトリをファイルコピーすると不整合になるため、起動中は中断してその旨を表示する。コピー先が起動中の場合は自動的に停止してからコピーする。
+
+2回目以降の起動ではコピーしない。確認作業中に入力したデータが消えないようにするため。本体の内容で作り直すときは `sync-data` を使う。
+
+```bash
+~/symphony/<INSTANCE>/bin/preview.sh sync-data 42
+```
+
+#### ホストポートを含む設定の扱い
+
+**`.env` にホストポートを直接書いた値があると、workspaceでは誤った宛先を指す。**代表例が、ブラウザから見えるAPIのURLである。
+
+```
+# 本体の .env（本体のbackendは8000番）
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
+```
+
+この値がworkspaceに持ち込まれると、Issue #181 のプレビュー（backendは8181番）でもブラウザは8000番に問い合わせる。**画面は表示されるがAPI呼び出しだけが `Failed to fetch` で失敗する**ため、原因が分かりにくい。
+
+`preview.sh` は2段構えで対処する。
+
+**1. コピー時に除去する**
+
+`.env` を新規に作るとき、次の行を落としてコメントに置き換える。除去するとcompose側の既定値が使われ、Issue番号由来のポートに解決される。
+
+- 変数名が `HOST_*` のもの
+- `COMPOSE_PROJECT_NAME`
+- 値に `localhost:<ポート>` または `127.0.0.1:<ポート>` を含むもの
+- `SYMPHONY_ENV_DROP` に列挙した変数名
+
+**2. 既存の `.env` より優先される値をexportする**
+
+agentも作業中に `.env` を作ることがあり、その場合は独自のポートを書く。`preview.sh` は既存ファイルを上書きしないため、1だけでは足りない。
+
+Composeは `${VAR}` を解決するとき **shellの環境変数を `.env` より先に参照する**。この性質を使い、ファイルを編集せずに値を上書きする。agentがファイルを書き直しても競合しない。
+
+`preview.conf` で指定する。`{web}` `{api}` `{db}` `{opensearch}` `{redis}` がIssue番号由来のポートに置換される。
+
+```bash
+[ -n "${SYMPHONY_ENV_OVERRIDE:-}" ] || SYMPHONY_ENV_OVERRIDE='NEXT_PUBLIC_API_BASE_URL=http://localhost:{api}/api/v1'
+```
+
+複数指定する場合は `;` で区切る。
+
+#### `preview.conf`
+
+`setup.sh` が `bin/preview.conf` を生成する。`preview.sh` が自分では判断できない2点を記録するためのファイルである。
+
+```bash
+[ -n "${SYMPHONY_ENV_SOURCE:-}" ] || SYMPHONY_ENV_SOURCE='/Users/me/dev/My-Repo/.env'
+[ -n "${SYMPHONY_SOURCE_PROJECT:-}" ] || SYMPHONY_SOURCE_PROJECT='my-repo'
+```
+
+環境変数が設定されていればそちらが優先される。`SYMPHONY_SOURCE_PROJECT` が空ならデータのコピーを行わず、`SYMPHONY_ENV_SOURCE` が空なら `.env` のコピーを行わない。`setup.sh` を `--repo` 指定でリポジトリの外から実行した場合は、チェックアウトの場所が分からないため両方とも空になる。
+
+`${VAR:=既定値}` ではなく `[ -n ... ] || VAR='...'` の形式を使っている。既定値に `}` が含まれると変数展開がそこで終わり、`{api}` のようなプレースホルダが途中で切れるため。
+
 ### 13.5 Next.jsで使うための前提
 
 **`dev` スクリプトでポートを直書きしない**

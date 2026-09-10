@@ -59,9 +59,18 @@ unless `--force` is passed. It performs:
 2. sets `--model` in `agent.command`
 3. blanks AWS credential environment variables in `agent.env`
 4. appends the rule that forbids `Closes #...` in PR bodies
-5. installs `bin/preview.sh` when requested
+5. installs `bin/preview.sh` and `bin/preview.conf` when requested
 
 Each step is verified inside the script; it exits non-zero on failure.
+
+`preview.conf` records the two things `preview.sh` cannot work out for itself:
+the path of the main checkout and its compose project name. Both are only known
+when `setup.sh` runs inside the repository, so a `--repo` run leaves them blank
+and `preview.sh` then skips seeding `.env` and copying the database.
+
+Uncomment `SYMPHONY_ENV_OVERRIDE` in that file for any value that must follow
+the workspace's ports — a browser-facing API base URL is the usual one. Without
+it the page loads but every API call goes to the main checkout's port.
 
 ## Step 4: Verify
 
