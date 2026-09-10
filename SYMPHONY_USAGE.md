@@ -75,6 +75,7 @@ pnpm tsx bin/symphony.ts init ~/symphony/<INSTANCE> \
 1. モデルをOpusにする（14.1）
 2. AWS資格情報を遮断する（14.2）
 3. プロンプト本文にauto-closingキーワード禁止のルールを追加する（14.3）
+4. 並列数を10にする（14.4）
 
 ### 2.4 ラベル
 
@@ -395,7 +396,7 @@ Symphonyのランタイム契約。**YAMLのfrontmatter（設定）** と **本�
 | キー | 既定値 | 意味 |
 | --- | --- | --- |
 | `interval_ms` | `30000` | ポーリング間隔 |
-| `max_concurrent_runs` | `1` | 同時実行Issue数。TUIの `agents 1/1` の分母 |
+| `max_concurrent_runs` | `1`（`setup.sh` 適用後は `10`） | 同時実行Issue数。TUIの `agents 1/1` の分母 |
 | `retry.max_attempts` | `2` | 失敗時の最大試行回数 |
 | `watchdog.*` | 有効 | 無反応の検出と自動復旧のしきい値 |
 
@@ -548,14 +549,27 @@ repoごとに変えることが多い設定:
 
 マージ後も残したい場合は `retention.on_success: retain` にするが、手動削除が必要になる。
 
-### 13.2 並列数を上げる
+### 13.2 並列数
+
+`setup.sh` は既定で10を設定する（14.4）。
 
 ```yaml
 polling:
-  max_concurrent_runs: 3
+  max_concurrent_runs: 10
 ```
 
 workspaceは `<owner>_<repo>_<N>` で自動的に分離されるため、ディレクトリの衝突は起きない。衝突するのは**ホストのポート**。
+
+#### compose以外で固定されているポート
+
+`compose_ports.py` が扱えるのは compose ファイルだけで、次の2つは検出できない。並列数を上げる前に対象repoを個別に確認する。
+
+| 箇所 | 症状 |
+| --- | --- |
+| `PORT` を渡さずに起動するdevサーバー（`next dev` は3000番固定） | 2つ目のworkspaceが起動時にポート衝突で失敗する |
+| ツール自身の固定ポート設定ファイル（`supabase/config.toml` の `[api] port` など） | 新しいスタックが立たず、既存の同一コンテナ群を操作する。`project_id` でコンテナ名も決まるため、片方の `db reset` がもう片方の作業対象データを削除する |
+
+対象repoを修正できない場合は、そのrepoのインスタンスだけ `max_concurrent_runs` を下げる。
 
 ### 13.3 Dockerのホストポートを環境変数化する
 
@@ -619,7 +633,7 @@ diff /tmp/before.txt /tmp/after.txt   # 何も出なければOK
 
 ### 13.4 `preview.sh` でIssueごとに起動する
 
-**ポートをIssue番号から決める**ため、`.env` の事前生成もポートの採番も不要。全文は14.4。
+**ポートをIssue番号から決める**ため、`.env` の事前生成もポートの採番も不要。全文は14.5。
 
 | Issue | URL |
 | --- | --- |
@@ -838,7 +852,27 @@ agent:
 
 `Closes #...` を書かれるとGitHubが先にIssueをcloseしてしまい、SymphonyのライフサイクルとGitHub上の状態がずれる。
 
-### 14.4 `bin/preview.sh` 全文
+### 14.4 変更点4: 並列数を10にする
+
+雛形:
+
+```yaml
+polling:
+  max_concurrent_runs: 1
+```
+
+標準:
+
+```yaml
+polling:
+  max_concurrent_runs: 10
+```
+
+`setup.sh` は `--concurrency` の既定値10をこの行に書き込む。上限は同時に走らせる
+Claude Codeプロセス数であり、実測でrunner1本あたりRSS約380MB。並列数を下げるのは
+対象repoがworkspaceの並列起動に耐えられない場合（13章のホストポート衝突）に限る。
+
+### 14.5 `bin/preview.sh` 全文
 
 `~/symphony/<INSTANCE>/bin/preview.sh` として保存し、`chmod +x` する。インスタンス間でそのままコピーして使える。
 
@@ -926,7 +960,7 @@ case "${1:-}" in
 esac
 ```
 
-### 14.5 `hooks.after_create`（Webアプリrepoの場合）
+### 14.6 `hooks.after_create`（Webアプリrepoの場合）
 
 依存インストールをworkspace作成時に済ませておく。
 
@@ -968,7 +1002,7 @@ hooks:
         >> .env
 ```
 
-### 14.6 `OPERATOR.md`
+### 14.7 `OPERATOR.md`
 
 手動 `/land` 運用であれば雛形のまま未記入でよい。自動 `/land` を導入する場合は、次を記述する。
 
@@ -977,7 +1011,7 @@ hooks:
 - マージ後のruntimeの再起動方針
 - 通常の介入とエスカレーションの境界
 
-### 14.7 対象repo側に必要なもの
+### 14.8 対象repo側に必要なもの
 
 第13章の構成を使う場合、**対象repo側**に次が必要。これらはSymphony用ではなく、そのrepo自体の開発環境として持つべきもの。
 
@@ -987,7 +1021,7 @@ hooks:
 | `.gitignore` | `.env` を追加する |
 | `package.json` | `dev` スクリプトからポート直書きを外す（13.5） |
 
-### 14.8 セットアップ手順のまとめ
+### 14.9 セットアップ手順のまとめ
 
 ```bash
 # 1. インスタンス生成
@@ -996,12 +1030,12 @@ pnpm tsx bin/symphony.ts init ~/symphony/<INSTANCE> \
   --tracker-repo <OWNER>/<REPO> \
   --runner claude-code
 
-# 2. WORKFLOW.md に 14.1 / 14.2 / 14.3 を適用
+# 2. WORKFLOW.md に 14.1 / 14.2 / 14.3 / 14.4 を適用
 $EDITOR ~/symphony/<INSTANCE>/WORKFLOW.md
 
 # 3. preview.sh を設置（Webアプリの場合）
 mkdir -p ~/symphony/<INSTANCE>/bin
-$EDITOR ~/symphony/<INSTANCE>/bin/preview.sh   # 14.4 を貼り付け
+$EDITOR ~/symphony/<INSTANCE>/bin/preview.sh   # 14.5 を貼り付け
 chmod +x ~/symphony/<INSTANCE>/bin/preview.sh
 
 # 4. 起動

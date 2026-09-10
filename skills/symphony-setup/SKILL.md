@@ -41,7 +41,7 @@ Inspect the repository and choose:
 | Option | Rule |
 | --- | --- |
 | `--model` | `opus` (default). Use `sonnet` only if the user says the repo carries routine work only |
-| `--concurrency` | omit unless the user wants parallel issues. `3` is a reasonable first value |
+| `--concurrency` | `10` (default). Lower it only if the user asks, or if the repository cannot run parallel workspaces (see Step 5) |
 | `--preview` | `yes` when `package.json`, `docker-compose.yml`, or `compose.yaml` exists (auto-detected). Installs `bin/preview.sh` |
 
 Report the choices to the user in one line before running.
@@ -59,7 +59,8 @@ unless `--force` is passed. It performs:
 2. sets `--model` in `agent.command`
 3. blanks AWS credential environment variables in `agent.env`
 4. appends the rule that forbids `Closes #...` in PR bodies
-5. installs `bin/preview.sh` and `bin/preview.conf` when requested
+5. sets `polling.max_concurrent_runs` to `--concurrency`
+6. installs `bin/preview.sh` when requested
 
 Each step is verified inside the script; it exits non-zero on failure.
 
@@ -77,10 +78,12 @@ it the page loads but every API call goes to the main checkout's port.
 ```bash
 grep -n -- "--model" ~/symphony/<instance>/WORKFLOW.md
 grep -c AWS_ ~/symphony/<instance>/WORKFLOW.md
+grep -n max_concurrent_runs ~/symphony/<instance>/WORKFLOW.md
 tail -1 ~/symphony/<instance>/WORKFLOW.md
 ```
 
-Expect the chosen model, 10 AWS lines, and the auto-closing-keywords rule.
+Expect the chosen model, 10 AWS lines, the chosen concurrency, and the
+auto-closing-keywords rule.
 
 ## Step 5: Check host ports in development compose files
 

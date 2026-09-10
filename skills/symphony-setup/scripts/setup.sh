@@ -13,7 +13,7 @@ SYMPHONY_HOME="${SYMPHONY_HOME:-$HOME/symphony}"
 repo=""
 instance=""
 model="opus"
-concurrency=""
+concurrency=10
 with_preview="auto"
 force=0
 
@@ -25,7 +25,7 @@ options:
   --repo <owner/repo>   target repository (default: origin remote of cwd)
   --instance <name>     instance directory name (default: repository name)
   --model <alias>       claude model alias (default: opus)
-  --concurrency <n>     polling.max_concurrent_runs (default: leave template value)
+  --concurrency <n>     polling.max_concurrent_runs (default: 10)
   --preview <yes|no>    install bin/preview.sh (default: yes when package.json
                         or docker-compose.yml exists in cwd)
   --force               overwrite an existing instance directory
@@ -95,6 +95,11 @@ if [ -z "$repo" ]; then
     | sed -E 's#^git@[^:]+:##; s#^https?://[^/]+/##; s#\.git$##')"
 fi
 
+case "$concurrency" in
+  ""|*[!0-9]*) die "--concurrency must be a positive integer, got: $concurrency" ;;
+esac
+[ "$concurrency" -ge 1 ] || die "--concurrency must be >= 1, got: $concurrency"
+
 case "$repo" in
   */*) ;;
   *) die "--repo must be <owner>/<repo>, got: $repo" ;;
@@ -122,6 +127,7 @@ fi
 echo "repo      : $repo"
 echo "instance  : $instance_root"
 echo "model     : $model"
+echo "concurrency: $concurrency"
 echo "preview   : $with_preview"
 echo
 
@@ -135,17 +141,17 @@ init_args=(tsx bin/symphony.ts init "$instance_root"
 
 [ -f "$workflow" ] || die "symphony init did not produce $workflow"
 
-# ------------------------------------------------- standard customization 1/3 --
+# ------------------------------------------------- standard customization 1/4 --
 # Model. SYMPHONY_USAGE.md 14.1
 perl -pi -e "s/--model sonnet\$/--model ${model}/" "$workflow"
 grep -q -- "--model ${model}" "$workflow" || die "failed to set --model ${model}"
 
-# ------------------------------------------------- standard customization 2/3 --
+# ------------------------------------------------- standard customization 2/4 --
 # Block cloud credentials from the runner subprocess. SYMPHONY_USAGE.md 14.2
 perl -0pi -e 's/^  env: \{\}$/  env:\n    AWS_PROFILE: ""\n    AWS_DEFAULT_PROFILE: ""\n    AWS_ACCESS_KEY_ID: ""\n    AWS_SECRET_ACCESS_KEY: ""\n    AWS_SESSION_TOKEN: ""\n    AWS_REGION: ""\n    AWS_DEFAULT_REGION: ""\n    AWS_EC2_METADATA_DISABLED: "true"\n    AWS_SHARED_CREDENTIALS_FILE: "\/dev\/null"\n    AWS_CONFIG_FILE: "\/dev\/null"/m' "$workflow"
 grep -q "AWS_ACCESS_KEY_ID" "$workflow" || die "failed to inject agent.env"
 
-# ------------------------------------------------- standard customization 3/3 --
+# ------------------------------------------------- standard customization 3/4 --
 # Issue completion is owned by Symphony. SYMPHONY_USAGE.md 14.3
 if ! grep -q "auto-closing keywords" "$workflow"; then
   printf '%s\n' \
@@ -153,11 +159,13 @@ if ! grep -q "auto-closing keywords" "$workflow"; then
     >> "$workflow"
 fi
 
-# ----------------------------------------------------------- optional tuning --
-if [ -n "$concurrency" ]; then
-  perl -pi -e "s/^  max_concurrent_runs: \\d+\$/  max_concurrent_runs: ${concurrency}/" "$workflow"
-fi
+# ------------------------------------------------- standard customization 4/4 --
+# Concurrency. SYMPHONY_USAGE.md 14.4
+perl -pi -e "s/^  max_concurrent_runs: \\d+\$/  max_concurrent_runs: ${concurrency}/" "$workflow"
+grep -q "^  max_concurrent_runs: ${concurrency}\$" "$workflow" \
+  || die "failed to set max_concurrent_runs: ${concurrency}"
 
+# ----------------------------------------------------------- optional tuning --
 if [ "$with_preview" = "yes" ]; then
   mkdir -p "$instance_root/bin"
   cp "$SCRIPT_DIR/preview.sh" "$instance_root/bin/preview.sh"

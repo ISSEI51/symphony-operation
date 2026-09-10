@@ -58,18 +58,18 @@ lint:
 # lint とドキュメント整合性をまとめて確認する
 ci: lint check-doc
 
-# SYMPHONY_USAGE.md 14.4 の preview.sh 全文がスクリプト実体と一致するか確認する
+# SYMPHONY_USAGE.md 14.5 の preview.sh 全文がスクリプト実体と一致するか確認する
 check-doc:
     #!/usr/bin/env bash
     set -euo pipefail
     tmp="$(mktemp)"
     trap 'rm -f "$tmp"' EXIT
-    perl -ne 'print if /^### 14\.4/../^### 14\.5/' SYMPHONY_USAGE.md \
+    perl -ne 'print if /^### 14\.5/../^### 14\.6/' SYMPHONY_USAGE.md \
       | sed -n '/^```bash$/,/^```$/p' | sed '1d;$d' > "$tmp"
     if diff -q "$tmp" skills/symphony-setup/scripts/preview.sh >/dev/null; then
-      echo "check-doc: preview.sh matches SYMPHONY_USAGE.md 14.4"
+      echo "check-doc: preview.sh matches SYMPHONY_USAGE.md 14.5"
     else
-      echo "check-doc: MISMATCH between SYMPHONY_USAGE.md 14.4 and scripts/preview.sh" >&2
+      echo "check-doc: MISMATCH between SYMPHONY_USAGE.md 14.5 and scripts/preview.sh" >&2
       diff "$tmp" skills/symphony-setup/scripts/preview.sh || true
       exit 1
     fi
